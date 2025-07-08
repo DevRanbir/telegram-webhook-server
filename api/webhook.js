@@ -82,6 +82,11 @@ app.post('/api/webhook/telegram', async (req, res) => {
     const userId = userIdMatch[1].trim();
     const responseText = message.text.trim();
 
+    console.log(`🎯 EXTRACTED DATA:`);
+    console.log(`   - UserId: "${userId}"`);
+    console.log(`   - Response: "${responseText}"`);
+    console.log(`   - Original quoted text: "${originalText}"`);
+
     console.log(`➡️ Storing response in Firebase for userId=${userId}:`, responseText);
 
     try {
@@ -90,7 +95,7 @@ app.post('/api/webhook/telegram', async (req, res) => {
         message: responseText,
         userId: userId,
         userName: 'Support Team',
-        timestamp: new Date(),
+        timestamp: new Date(), // Will be converted to Firestore timestamp
         createdAt: new Date().toISOString(),
         isFromTelegram: true,
         messageType: 'support',
