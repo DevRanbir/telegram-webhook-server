@@ -68,13 +68,11 @@ app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
-// For Vercel deployment
-module.exports = app;
-
-// For traditional hosting
+export default app;
+// Start the server
 if (require.main === module) {
-  const PORT = process.env.PORT || 3001;
+  const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => {
-    console.log(`Webhook server running on port ${PORT}`);
+    console.log(`Server is running on port ${PORT}`);
   });
 }
