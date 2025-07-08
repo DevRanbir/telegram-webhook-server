@@ -4,6 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "start": "node api/webhook.js",
+    "dev": "node api/webhook.js",
+    "setup-webhook": "node setup-webhook.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -12,6 +15,7 @@
   "type": "module",
   "dependencies": {
     "cors": "^2.8.5",
+    "dotenv": "^16.0.0",
     "express": "^5.1.0",
     "firebase-admin": "^12.0.0"
   }

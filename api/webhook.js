@@ -1,10 +1,17 @@
 import express from 'express';
 import cors from 'cors';
+import dotenv from 'dotenv';
+
+// Load environment variables from .env file
+dotenv.config();
 
 const app = express();
 
 app.use(express.json());
 app.use(cors());
+
+// Port configuration for localhost
+const PORT = process.env.PORT || 3000;
 
 // Environment variables
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -60,22 +67,146 @@ app.post('/api/webhook/telegram', async (req, res) => {
     }
 
     const message = update.message;
+    
+    // Log basic message info for debugging
+    console.log('📱 Message details:');
+    console.log(`   - From: ${message.from?.first_name || 'Unknown'} (ID: ${message.from?.id})`);
+    console.log(`   - Text: "${message.text}"`);
+    console.log(`   - Chat ID: ${message.chat?.id}`);
+    console.log(`   - Is reply: ${!!message.reply_to_message}`);
 
     // Check if admin reply quotes a user message
     if (!message.reply_to_message || !message.reply_to_message.text) {
-      console.log('⚠️ No reply_to_message.text found');
-      return res.status(200).json({ success: true });
+      console.log('⚠️ No reply_to_message.text found - this is a regular message, not an admin reply');
+      console.log('💡 Storing regular message to Firebase');
+      
+      // Store regular messages to Firebase
+      try {
+        const now = new Date();
+        const expiresAt = new Date(now.getTime() + (2 * 60 * 60 * 1000)); // 2 hours from now
+        
+        const chatMessage = {
+          message: message.text,
+          userId: message.from.id.toString(),
+          userName: message.from.first_name || 'Unknown User',
+          timestamp: now,
+          createdAt: now.toISOString(),
+          expiresAt: expiresAt, // TTL field for automatic deletion
+          isFromTelegram: true,
+          messageType: 'user_message',
+          telegramMessageId: message.message_id,
+          chatId: message.chat.id.toString()
+        };
+
+        const docRef = await db.collection('chat-messages').add(chatMessage);
+        console.log('✅ Regular message stored in Firebase with ID:', docRef.id);
+      } catch (firebaseError) {
+        console.error('❌ Error storing regular message in Firebase:', firebaseError);
+      }
+      
+      // For testing: respond to simple messages like "hi", "hello", "test"
+      const testMessages = ['hi', 'hello', 'test', 'ping'];
+      if (testMessages.includes(message.text.toLowerCase())) {
+        console.log('🧪 Test message detected, sending auto-reply');
+        
+        try {
+          await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: message.chat.id,
+              text: `👋 Hello! I received your message: "${message.text}"\n\n🤖 This message has been stored in Firebase!\n📡 Server is working correctly!`,
+              reply_to_message_id: message.message_id
+            })
+          });
+          console.log('✅ Test reply sent successfully');
+        } catch (replyError) {
+          console.error('❌ Error sending test reply:', replyError);
+        }
+      }
+      
+      return res.status(200).json({ success: true, note: 'Regular message received and stored in Firebase' });
     }
 
     const originalText = message.reply_to_message.text;
     console.log('📝 Original quoted text:', originalText);
 
-    // Extract userId from quoted message
-    const userIdMatch = originalText.match(/🆔 <b>ID:<\/b> <code>([^<]+)<\/code>/);
+    // Extract userId from quoted message - multiple patterns to handle different formats
+    let userIdMatch = originalText.match(/🆔 ID: ([^\n]+)/);
+    
+    // If first pattern fails, try alternative patterns
+    if (!userIdMatch) {
+      userIdMatch = originalText.match(/user_\d+_[a-z0-9]+/);
+      if (userIdMatch) {
+        userIdMatch = [userIdMatch[0], userIdMatch[0]]; // Format to match expected array structure
+      }
+    }
+    
     console.log('🔎 userIdMatch:', userIdMatch);
 
     if (!userIdMatch) {
       console.log('❌ Could not extract userId from quoted text');
+      console.log('📝 Trying all possible extraction methods...');
+      
+      // Try more alternative patterns
+      const patterns = [
+        /ID:\s*([^\s\n]+)/,
+        /user_\d+_[a-z\d]+/,
+        /🆔[^:]*:\s*([^\n]+)/,
+        /ID[^:]*:\s*([^\n]+)/
+      ];
+      
+      let foundUserId = null;
+      for (const pattern of patterns) {
+        const match = originalText.match(pattern);
+        if (match) {
+          foundUserId = match[1] || match[0];
+          console.log('✅ Found user ID with pattern:', pattern, '→', foundUserId);
+          break;
+        }
+      }
+      
+      if (foundUserId) {
+        const responseText = message.text.trim();
+        
+        // Store response with extracted user ID
+        try {
+          const now = new Date();
+          const expiresAt = new Date(now.getTime() + (2 * 60 * 60 * 1000)); // 2 hours from now
+          
+          const chatMessage = {
+            message: responseText,
+            userId: foundUserId,
+            userName: 'Support Team',
+            timestamp: now,
+            createdAt: now.toISOString(),
+            expiresAt: expiresAt, // TTL field for automatic deletion
+            isFromTelegram: true,
+            messageType: 'support',
+            originalMessageId: null,
+            replyToUser: true
+          };
+
+          const docRef = await db.collection('chat-messages').add(chatMessage);
+          console.log('✅ Support response stored in Firebase with ID:', docRef.id);
+          
+          // Confirm to Telegram admin in chat
+          await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: message.chat.id,
+              text: `✅ Response sent to user ${foundUserId}`,
+              reply_to_message_id: message.message_id
+            })
+          });
+          
+          return res.status(200).json({ success: true });
+        } catch (firebaseError) {
+          console.error('❌ Error storing support response in Firebase:', firebaseError);
+        }
+      }
+      
       return res.status(200).json({ success: false, error: 'User ID not found in original message' });
     }
 
@@ -91,12 +222,16 @@ app.post('/api/webhook/telegram', async (req, res) => {
 
     try {
       // Store response directly in Firebase
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + (2 * 60 * 60 * 1000)); // 2 hours from now
+      
       const chatMessage = {
         message: responseText,
         userId: userId,
         userName: 'Support Team',
-        timestamp: new Date(), // Will be converted to Firestore timestamp
-        createdAt: new Date().toISOString(),
+        timestamp: now, // Will be converted to Firestore timestamp
+        createdAt: now.toISOString(),
+        expiresAt: expiresAt, // TTL field for automatic deletion
         isFromTelegram: true,
         messageType: 'support',
         originalMessageId: null
@@ -129,9 +264,42 @@ app.post('/api/webhook/telegram', async (req, res) => {
   }
 });
 
+// GET endpoint for webhook testing (shows webhook info)
+app.get('/api/webhook/telegram', (req, res) => {
+  res.json({
+    message: 'Telegram Webhook Endpoint',
+    method: 'This endpoint accepts POST requests from Telegram',
+    status: 'Ready to receive webhooks',
+    timestamp: new Date().toISOString(),
+    botTokenConfigured: !!process.env.TELEGRAM_BOT_TOKEN,
+    firebaseConfigured: !!process.env.FIREBASE_PROJECT_ID
+  });
+});
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
+
+// Root endpoint for testing
+app.get('/', (req, res) => {
+  res.json({ 
+    message: 'Telegram Webhook Server is running!', 
+    timestamp: new Date().toISOString(),
+    endpoints: {
+      webhook: '/api/webhook/telegram',
+      health: '/api/health'
+    }
+  });
+});
+
+// Start server only if not in serverless environment
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on http://localhost:${PORT}`);
+    console.log(`📡 Webhook endpoint: http://localhost:${PORT}/api/webhook/telegram`);
+    console.log(`🏥 Health check: http://localhost:${PORT}/api/health`);
+  });
+}
 
 export default app;
