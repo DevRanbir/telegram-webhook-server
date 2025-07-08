@@ -38,7 +38,7 @@ app.post('/api/webhook/telegram', async (req, res) => {
     console.log('📝 Original quoted text:', originalText);
 
     // Extract userId from quoted message
-    const userIdMatch = originalText.match(/🆔 ID: (.+)/);
+    const userIdMatch = originalText.match(/🆔 <b>ID:<\/b> <code>([^<]+)<\/code>/);
     console.log('🔎 userIdMatch:', userIdMatch);
 
     if (!userIdMatch) {
