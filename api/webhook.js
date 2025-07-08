@@ -294,12 +294,9 @@ app.get('/', (req, res) => {
 });
 
 // Start server only if not in serverless environment
-if (process.env.NODE_ENV !== 'production') {
-  app.listen(PORT, () => {
-    console.log(`🚀 Server running on http://localhost:${PORT}`);
-    console.log(`📡 Webhook endpoint: http://localhost:${PORT}/api/webhook/telegram`);
-    console.log(`🏥 Health check: http://localhost:${PORT}/api/health`);
-  });
-}
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
+
 
 export default app;
